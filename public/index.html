@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EPLQ: Secure Location Query</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide-react@0.292.0"></script>
+    <!-- Three.js CDN for animated background -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Leaflet.js for interactive map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Leaflet MarkerCluster plugin -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <!-- Leaflet Heatmap plugin -->
+    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #1e3a8a, #3b82f6);
+        }
+        /* Dark mode overrides */
+        html.dark body {
+            background: linear-gradient(135deg, #0b1020, #1f2937);
+            color: #e5e7eb;
+        }
+        html.dark #auth-form, html.dark #main-container, html.dark .bg-white {
+            background-color: #0f172a !important;
+            color: #e5e7eb !important;
+            border-color: #1f2937 !important;
+        }
+        html.dark .text-gray-800 { color: #e5e7eb !important; }
+        html.dark .text-gray-700 { color: #e5e7eb !important; }
+        html.dark .text-gray-600 { color: #cbd5e1 !important; }
+        html.dark #main-container { box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        html.dark #status-area #loading-spinner { border-color: #334155; border-top-color: #6366f1; }
+        html.dark #map { border-color: #1f2937 !important; }
+        html.dark table thead tr { background-color: #0b1220 !important; }
+        html.dark td, html.dark th { border-color: #1f2937 !important; }
+        html.dark .hover\:bg-indigo-50:hover { background-color: #111827 !important; }
+        #bg-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+            opacity: 0.3;
+        }
+        #main-container {
+            max-height: 100vh;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #3b82f6 #e5e7eb;
+        }
+        #main-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        #main-container::-webkit-scrollbar-track {
+            background: #e5e7eb;
+            border-radius: 4px;
+        }
+        #main-container::-webkit-scrollbar-thumb {
+            background: #3b82f6;
+            border-radius: 4px;
+        }
+        .animate-slide-in {
+            animation: slideIn 0.5s ease-in-out;
+        }
+        @keyframes slideIn {
+            0% { transform: translateY(20px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+        [data-tooltip] {
+            position: relative;
+        }
+        [data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1f2937;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 10;
+        }
+        /* Responsive adjustments */
+        @media (max-width: 640px) {
+            #auth-form-container {
+                padding: 1rem;
+            }
+            #map {
+                height: 16rem; /* 256px */
+            }
+        }
+        @media (min-width: 640px) {
+            #map {
+                height: 20rem; /* 320px */
+            }
+        }
+        @media (min-width: 768px) {
+            #map {
+                height: 24rem; /* 384px */
+            }
+        }
+    </style>
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#1f2937" />
+</head>
+<body class="flex items-center justify-center min-h-screen p-4 sm:p-6">
+    <!-- Three.js Canvas for Animated Background -->
+    <canvas id="bg-canvas"></canvas>
+
+    <!-- Authentication Form Container (Centered) -->
+    <div id="auth-form-container" class="flex items-center justify-center min-h-screen w-full absolute top-0 left-0 z-20">
+        <div id="auth-form" class="bg-white p-6 sm:p-8 rounded-3xl shadow-xl w-full max-w-md animate-slide-in border border-gray-100">
+            <div class="text-center mb-6">
+                <h1 class="text-3xl sm:text-4xl font-bold text-indigo-700">Welcome to EPLQ</h1>
+                <p class="text-sm sm:text-base text-gray-500 mt-2">Secure & Privacy-Preserving Location Queries</p>
+            </div>
+            <div class="flex flex-col space-y-4">
+                <input id="email" type="email" placeholder="Email" class="p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors bg-gray-50 text-sm sm:text-base">
+                <input id="password" type="password" placeholder="Password" class="p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors bg-gray-50 text-sm sm:text-base">
+            </div>
+            <div class="grid grid-cols-2 gap-3 sm:gap-4 mt-6">
+                <button id="registerBtn" data-tooltip="Create a new account" class="flex items-center justify-center space-x-2 px-4 py-3 sm:py-4 rounded-full bg-indigo-600 text-white font-semibold shadow-lg hover:bg-indigo-700 transition-all duration-300 transform hover:scale-105 text-sm sm:text-base">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-user-plus"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="16" x2="22" y1="11" y2="11"/></svg>
+                    <span>Register</span>
+                </button>
+                <button id="loginBtn" data-tooltip="Sign in to your account" class="flex items-center justify-center space-x-2 px-4 py-3 sm:py-4 rounded-full bg-blue-500 text-white font-semibold shadow-lg hover:bg-blue-600 transition-all duration-300 transform hover:scale-105 text-sm sm:text-base">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-log-in"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>
+                    <span>Login</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Container for Dashboards -->
+    <div id="main-container" class="bg-white p-6 sm:p-10 rounded-3xl shadow-2xl w-full max-w-md sm:max-w-lg md:max-w-2xl lg:max-w-3xl text-gray-800 z-10 hidden">
+        <!-- Sticky Header -->
+        <div class="sticky top-0 bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 rounded-t-3xl shadow-md z-20 flex items-center justify-between">
+            <h1 class="text-xl sm:text-2xl font-bold">EPLQ: Secure Location Query</h1>
+            <div class="flex items-center space-x-2">
+                <button id="darkModeToggle" class="bg-black/30 hover:bg-black/40 text-white text-xs sm:text-sm px-3 py-1.5 rounded-full">Dark Mode</button>
+                <button id="bgPauseBtn" class="bg-black/30 hover:bg-black/40 text-white text-xs sm:text-sm px-3 py-1.5 rounded-full">Pause BG</button>
+                <select id="bgPreset" class="bg-black/30 text-white text-xs sm:text-sm px-2 py-1.5 rounded-full">
+                    <option value="network">Network</option>
+                    <option value="starfield">Starfield</option>
+                    <option value="orbit">Orbit</option>
+                </select>
+                <button id="installAppBtn" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm px-3 py-1.5 rounded-full">Install App</button>
+            </div>
+        </div>
+
+        <!-- Loading and Message Area -->
+        <div id="status-area" class="text-center my-6">
+            <div id="loading-spinner" class="hidden w-8 h-8 mx-auto border-4 border-t-4 border-gray-200 border-t-indigo-500 rounded-full animate-spin"></div>
+            <p id="message-text" class="text-sm font-medium text-gray-600 mt-2 opacity-0 transition-opacity duration-300"></p>
+        </div>
+
+        <!-- Admin Dashboard -->
+        <div id="admin-dashboard" class="space-y-8 hidden animate-slide-in">
+            <div class="flex justify-between items-center pb-4 border-b border-gray-200">
+                <h2 class="text-2xl sm:text-3xl font-bold text-indigo-700">Admin Dashboard</h2>
+                <button id="logoutBtnAdmin" data-tooltip="Sign out" class="bg-red-500 text-white text-sm font-semibold py-2 px-4 rounded-full shadow-md hover:bg-red-600 transition-all duration-300">Logout</button>
+            </div>
+            <div class="bg-gradient-to-br from-gray-50 to-blue-50 p-6 rounded-3xl border border-gray-100 shadow-inner space-y-6">
+                <h3 class="text-xl sm:text-2xl font-semibold text-gray-700">Upload Encrypted POIs</h3>
+                <div class="flex flex-col space-y-4">
+                    <input id="poiName" type="text" placeholder="POI Name" class="p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 text-sm sm:text-base">
+                    <input id="poiLat" type="number" step="any" placeholder="Latitude" class="p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 text-sm sm:text-base">
+                    <input id="poiLon" type="number" step="any" placeholder="Longitude" class="p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 text-sm sm:text-base">
+                    <select id="poiCategory" class="p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 text-sm sm:text-base">
+                        <option value="">Select Category</option>
+                        <option value="restaurant">Restaurant</option>
+                        <option value="landmark">Landmark</option>
+                        <option value="shop">Shop</option>
+                        <option value="other">Other</option>
+                    </select>
+                    <div>
+                        <input id="poiCsvInput" type="file" accept=".csv" class="block w-full text-sm text-gray-600" />
+                        <button id="importCsvBtn" class="mt-2 bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold py-2 px-4 rounded-full">Import CSV</button>
+                    </div>
+                </div>
+                <button id="uploadBtn" data-tooltip="Upload POI to database" class="w-full bg-indigo-600 text-white font-semibold py-3 sm:py-4 rounded-full shadow-lg hover:bg-indigo-700 transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2 text-sm sm:text-base">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-upload"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                    <span>Upload Data</span>
+                </button>
+            </div>
+            <div class="bg-gradient-to-br from-gray-50 to-blue-50 p-6 rounded-3xl border border-gray-100 shadow-inner space-y-6">
+                <h3 class="text-xl sm:text-2xl font-semibold text-gray-700">Manage POIs</h3>
+                <div id="poiTable" class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="text-gray-600 bg-gray-100">
+                                <th class="p-3 text-sm sm:text-base">Name</th>
+                                <th class="p-3 text-sm sm:text-base">Latitude</th>
+                                <th class="p-3 text-sm sm:text-base">Longitude</th>
+                                <th class="p-3 text-sm sm:text-base">Category</th>
+                                <th class="p-3 text-sm sm:text-base">Rating</th>
+                                <th class="p-3 text-sm sm:text-base">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="poiTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Dashboard -->
+        <div id="user-dashboard" class="space-y-8 hidden animate-slide-in">
+            <div class="flex justify-between items-center pb-4 border-b border-gray-200">
+                <h2 class="text-2xl sm:text-3xl font-bold text-indigo-700">User Dashboard</h2>
+                <button id="logoutBtnUser" data-tooltip="Sign out" class="bg-red-500 text-white text-sm font-semibold py-2 px-4 rounded-full shadow-md hover:bg-red-600 transition-all duration-300">Logout</button>
+            </div>
+            <div class="bg-gradient-to-br from-gray-50 to-blue-50 p-6 rounded-3xl border border-gray-100 shadow-inner space-y-6">
+                <h3 class="text-xl sm:text-2xl font-semibold text-gray-700">Search for POIs</h3>
+                <p class="text-sm text-gray-500">Enter your location and search radius to find nearby POIs.</p>
+                <div class="flex flex-col space-y-4">
+                    <input id="userLat" type="number" step="any" placeholder="Your Latitude" class="p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 text-sm sm:text-base">
+                    <input id="userLon" type="number" step="any" placeholder="Your Longitude" class="p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 text-sm sm:text-base">
+                    <input id="searchRadius" type="number" step="any" placeholder="Search Radius (in km)" class="p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 text-sm sm:text-base">
+                    <select id="searchCategory" class="p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 text-sm sm:text-base">
+                        <option value="">All Categories</option>
+                        <option value="restaurant">Restaurant</option>
+                        <option value="landmark">Landmark</option>
+                        <option value="shop">Shop</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <button id="detectLocationBtn" data-tooltip="Get your current location" class="w-full bg-teal-500 text-white font-semibold py-3 sm:py-4 rounded-full shadow-lg hover:bg-teal-600 transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2 text-sm sm:text-base">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-crosshair"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></svg>
+                    <span>Detect My Location</span>
+                </button>
+                <button id="searchBtn" data-tooltip="Search for nearby POIs" class="w-full bg-indigo-600 text-white font-semibold py-3 sm:py-4 rounded-full shadow-lg hover:bg-indigo-700 transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2 text-sm sm:text-base">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    <span>Search Data</span>
+                </button>
+                <div class="grid grid-cols-2 gap-3">
+                    <button id="exportCsvBtn" data-tooltip="Download results as CSV" class="w-full bg-emerald-600 text-white font-semibold py-2 rounded-full shadow hover:bg-emerald-700 transition flex items-center justify-center space-x-2 text-sm">
+                        <span>Export CSV</span>
+                    </button>
+                    <button id="showFavoritesBtn" data-tooltip="Show your favorites" class="w-full bg-amber-600 text-white font-semibold py-2 rounded-full shadow hover:bg-amber-700 transition text-sm">Favorites</button>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <button id="toggleHeatmapBtn" class="w-full bg-rose-600 text-white font-semibold py-2 rounded-full shadow hover:bg-rose-700 transition text-sm">Toggle Heatmap</button>
+                    <button id="shareLinkBtn" class="w-full bg-slate-700 text-white font-semibold py-2 rounded-full shadow hover:bg-slate-800 transition text-sm">Share Link</button>
+                </div>
+                <button id="visualizeAllBtn" data-tooltip="Show all POIs on map" class="w-full bg-purple-500 text-white font-semibold py-3 sm:py-4 rounded-full shadow-lg hover:bg-purple-600 transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2 text-sm sm:text-base">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-globe"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                    <span>Visualize All POIs</span>
+                </button>
+                <button id="visualizeResultsBtn" data-tooltip="Show search results on map" class="hidden w-full bg-purple-600 text-white font-semibold py-3 sm:py-4 rounded-full shadow-lg hover:bg-purple-700 transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2 text-sm sm:text-base">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-globe"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                    <span>Visualize Search Results</span>
+                </button>
+            </div>
+
+            <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                <h3 class="text-lg sm:text-xl font-semibold text-gray-800 mb-4">Found POIs (Decrypted Data)</h3>
+                <ul id="resultsList" class="space-y-3"></ul>
+                <p id="noResultsText" class="text-gray-500 text-sm hidden">No results found.</p>
+            </div>
+
+            <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                <h3 class="text-lg sm:text-xl font-semibold text-gray-800 mb-4">Favorites</h3>
+                <ul id="favoritesList" class="space-y-3"></ul>
+                <p id="noFavoritesText" class="text-gray-500 text-sm">No favorites yet.</p>
+            </div>
+
+            <!-- Interactive Map -->
+            <div id="map" class="w-full h-64 sm:h-80 md:h-96 rounded-3xl border border-gray-100 shadow-sm"></div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="editModal" class="fixed inset-0 bg-black/50 z-30 hidden items-center justify-center p-4">
+        <div class="bg-white w-full max-w-md rounded-2xl p-6 space-y-4">
+            <h3 class="text-lg font-semibold">Edit POI</h3>
+            <input id="editPoiName" type="text" placeholder="POI Name" class="w-full p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 text-sm">
+            <div class="grid grid-cols-2 gap-3">
+                <input id="editPoiLat" type="number" step="any" placeholder="Latitude" class="p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 text-sm">
+                <input id="editPoiLon" type="number" step="any" placeholder="Longitude" class="p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 text-sm">
+            </div>
+            <select id="editPoiCategory" class="w-full p-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 text-sm">
+                <option value="restaurant">Restaurant</option>
+                <option value="landmark">Landmark</option>
+                <option value="shop">Shop</option>
+                <option value="other">Other</option>
+            </select>
+            <div class="flex justify-end space-x-2">
+                <button id="cancelEditBtn" class="px-4 py-2 rounded-full border">Cancel</button>
+                <button id="saveEditBtn" class="px-4 py-2 rounded-full bg-indigo-600 text-white">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase and app logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, addDoc, query, getDocs, deleteDoc, updateDoc, enableIndexedDbPersistence, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+
+        // Firebase Global Variables
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = {
+            apiKey: "AIzaSyDB_DvB9svg4-f-8ZdkdvhNEIOISvWCmew",
+            authDomain: "eplq-2fcbf.firebaseapp.com",
+            projectId: "eplq-2fcbf",
+            storageBucket: "eplq-2fcbf.firebasestorage.app",
+            messagingSenderId: "296854447903",
+            appId: "1:296854447903:web:2cbed7ffdf0a8d5df4722a",
+            measurementId: "G-2WB1BVGM4S"
+        };
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // UI Elements
+        const authFormContainer = document.getElementById('auth-form-container');
+        const authForm = document.getElementById('auth-form');
+        const mainContainer = document.getElementById('main-container');
+        const adminDashboard = document.getElementById('admin-dashboard');
+        const userDashboard = document.getElementById('user-dashboard');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const messageText = document.getElementById('message-text');
+        const noResultsText = document.getElementById('noResultsText');
+        
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const registerBtn = document.getElementById('registerBtn');
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtnAdmin = document.getElementById('logoutBtnAdmin');
+        const logoutBtnUser = document.getElementById('logoutBtnUser');
+        
+        const poiNameInput = document.getElementById('poiName');
+        const poiLatInput = document.getElementById('poiLat');
+        const poiLonInput = document.getElementById('poiLon');
+        const poiCategoryInput = document.getElementById('poiCategory');
+        const uploadBtn = document.getElementById('uploadBtn');
+        
+        const userLatInput = document.getElementById('userLat');
+        const userLonInput = document.getElementById('userLon');
+        const searchRadiusInput = document.getElementById('searchRadius');
+        const searchCategoryInput = document.getElementById('searchCategory');
+        const searchBtn = document.getElementById('searchBtn');
+        const resultsList = document.getElementById('resultsList');
+        const visualizeAllBtn = document.getElementById('visualizeAllBtn');
+        const visualizeResultsBtn = document.getElementById('visualizeResultsBtn');
+        const detectLocationBtn = document.getElementById('detectLocationBtn');
+        const poiTableBody = document.getElementById('poiTableBody');
+        const exportCsvBtn = document.getElementById('exportCsvBtn');
+        const showFavoritesBtn = document.getElementById('showFavoritesBtn');
+        const favoritesList = document.getElementById('favoritesList');
+        const noFavoritesText = document.getElementById('noFavoritesText');
+        const poiCsvInput = document.getElementById('poiCsvInput');
+        const importCsvBtn = document.getElementById('importCsvBtn');
+        const darkModeToggle = document.getElementById('darkModeToggle');
+        const toggleHeatmapBtn = document.getElementById('toggleHeatmapBtn');
+        const shareLinkBtn = document.getElementById('shareLinkBtn');
+        const bgPauseBtn = document.getElementById('bgPauseBtn');
+        const bgPreset = document.getElementById('bgPreset');
+        const editModal = document.getElementById('editModal');
+        const editPoiName = document.getElementById('editPoiName');
+        const editPoiLat = document.getElementById('editPoiLat');
+        const editPoiLon = document.getElementById('editPoiLon');
+        const editPoiCategory = document.getElementById('editPoiCategory');
+        const cancelEditBtn = document.getElementById('cancelEditBtn');
+        const saveEditBtn = document.getElementById('saveEditBtn');
+
+        // Firestore and Auth instances
+        let app, db, auth, functions;
+        let userId;
+        let lastFoundPois = [];
+        let map, userMarker;
+        let clusterGroup;
+        let radiusCircle;
+        let editingPoiId = null;
+        let camera, scene, renderer, points, lines;
+        let mouseX = 0, mouseY = 0;
+        let windowHalfX = window.innerWidth / 2;
+        let windowHalfY = window.innerHeight / 2;
+        let heatmapEnabled = false;
+        let heatLayer;
+        let animationPaused = false;
+
+        const logMessage = (message, isError = false) => {
+            messageText.textContent = message;
+            messageText.style.color = isError ? '#ef4444' : '#4b5563';
+            messageText.style.opacity = 1;
+            setTimeout(() => {
+                messageText.style.opacity = 0;
+            }, 5000);
+        };
+
+        const showLoading = (show) => {
+            if (show) {
+                loadingSpinner.classList.remove('hidden');
+            } else {
+                loadingSpinner.classList.add('hidden');
+            }
+        };
+
+        const initializeFirebase = async () => {
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    throw new Error("Firebase config not provided.");
+                }
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                functions = getFunctions(app);
+                // Offline persistence
+                try { await enableIndexedDbPersistence(db); } catch (e) { console.warn('Persistence error', e); }
+                logMessage('Firebase initialized.');
+
+                onAuthStateChanged(auth, async (user) => {
+                    showLoading(true);
+                    // Only proceed to dashboards for non-anonymous, signed-in users
+                    if (user && !user.isAnonymous) {
+                        userId = user.uid;
+                        const userDocRef = doc(db, 'artifacts', appId, 'users', userId);
+                        const userDoc = await getDoc(userDocRef);
+                        authFormContainer.classList.add('hidden');
+                        mainContainer.classList.remove('hidden');
+                        if (userDoc.exists()) {
+                            const userData = userDoc.data();
+                            if (userData.role === 'admin') {
+                                showAdminDashboard();
+                                await loadPoiTable();
+                            } else {
+                                showUserDashboard();
+                            }
+                        } else {
+                            showUserDashboard();
+                        }
+                    } else {
+                        // Not signed in or anonymous: keep the auth form visible
+                        authFormContainer.classList.remove('hidden');
+                        mainContainer.classList.add('hidden');
+                    }
+                    showLoading(false);
+                });
+            } catch (error) {
+                console.error("Firebase initialization error:", error);
+                logMessage(`Error initializing Firebase: ${error.message}`, true);
+                showLoading(false);
+            }
+        };
+
+        const encryptData = (text) => btoa(text.split('').reverse().join(''));
+        const decryptData = (encryptedText) => {
+            try {
+                return atob(encryptedText).split('').reverse().join('');
+            } catch (e) {
+                return 'Decryption Failed';
+            }
+        };
+        // Haversine distance
+        const calculateDistance = (lat1, lon1, lat2, lon2) => {
+            const toRad = (x) => x * Math.PI / 180;
+            const R = 6371;
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        };
+
+        // Geohash encoding (5-7 precision suitable for km-level searches)
+        const BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';
+        const encodeGeohash = (latitude, longitude, precision = 7) => {
+            let idx = 0, bit = 0, evenBit = true;
+            let latMin = -90, latMax = 90;
+            let lonMin = -180, lonMax = 180;
+            let geohash = '';
+            while (geohash.length < precision) {
+                if (evenBit) {
+                    const lonMid = (lonMin + lonMax) / 2;
+                    if (longitude >= lonMid) { idx = (idx << 1) + 1; lonMin = lonMid; }
+                    else { idx = (idx << 1) + 0; lonMax = lonMid; }
+                } else {
+                    const latMid = (latMin + latMax) / 2;
+                    if (latitude >= latMid) { idx = (idx << 1) + 1; latMin = latMid; }
+                    else { idx = (idx << 1) + 0; latMax = latMid; }
+                }
+                evenBit = !evenBit;
+                if (++bit === 5) { geohash += BASE32.charAt(idx); bit = 0; idx = 0; }
+            }
+            return geohash;
+        };
+
+        const geohashPrefixesForRadiusKm = (lat, lon, radiusKm) => {
+            // Pick precision based on radius
+            // ~5: 4.9km cell, 6: 1.2km, 7: 0.15km
+            const precision = radiusKm > 5 ? 5 : radiusKm > 1 ? 6 : 7;
+            const center = encodeGeohash(lat, lon, precision);
+            // Neighboring cells to cover circle
+            const neighbors = [
+                [0,0],[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]
+            ];
+            // Simple neighbor generation by sampling nearby coords
+            const result = new Set([center]);
+            const d = radiusKm / 111; // deg approx
+            neighbors.forEach(([dx,dy]) => {
+                const gh = encodeGeohash(lat + dy*d, lon + dx*d, precision);
+                result.add(gh);
+            });
+            return Array.from(result);
+        };
+
+        const showAuthForm = () => {
+            authFormContainer.classList.remove('hidden');
+            mainContainer.classList.add('hidden');
+            mainContainer.scrollTop = 0;
+        };
+
+        const showAdminDashboard = () => {
+            authFormContainer.classList.add('hidden');
+            mainContainer.classList.remove('hidden');
+            adminDashboard.classList.remove('hidden');
+            userDashboard.classList.add('hidden');
+            mainContainer.scrollTop = 0;
+        };
+
+        const showUserDashboard = () => {
+            authFormContainer.classList.add('hidden');
+            mainContainer.classList.remove('hidden');
+            adminDashboard.classList.add('hidden');
+            userDashboard.classList.remove('hidden');
+            mainContainer.scrollTop = 0;
+        };
+
+        registerBtn.addEventListener('click', async () => {
+            showLoading(true);
+            const email = emailInput.value;
+            const password = passwordInput.value;
+            if (!email || !password) {
+                logMessage('Please enter an email and password.', true);
+                showLoading(false);
+                return;
+            }
+            try {
+                await createUserWithEmailAndPassword(auth, email, password);
+                logMessage('Registration successful! Please log in.');
+                emailInput.value = '';
+                passwordInput.value = '';
+            } catch (error) {
+                console.error('Registration error:', error);
+                logMessage(`Registration failed: ${error.message}`, true);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        loginBtn.addEventListener('click', async () => {
+            showLoading(true);
+            const email = emailInput.value;
+            const password = passwordInput.value;
+            if (!email || !password) {
+                logMessage('Please enter an email and password.', true);
+                showLoading(false);
+                return;
+            }
+            try {
+                console.log('Attempting login with email:', email);
+                await signInWithEmailAndPassword(auth, email, password);
+                logMessage('Login successful.');
+            } catch (error) {
+                console.error('Login error:', error);
+                logMessage(`Login failed: ${error.message}`, true);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        logoutBtnAdmin.addEventListener('click', async () => {
+            showLoading(true);
+            try {
+                await signOut(auth);
+                logMessage('Logged out successfully.');
+            } catch (error) {
+                console.error('Logout error:', error);
+                logMessage(`Logout failed: ${error.message}`, true);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        logoutBtnUser.addEventListener('click', async () => {
+            showLoading(true);
+            try {
+                await signOut(auth);
+                logMessage('Logged out successfully.');
+            } catch (error) {
+                console.error('Logout error:', error);
+                logMessage(`Logout failed: ${error.message}`, true);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        uploadBtn.addEventListener('click', async () => {
+            showLoading(true);
+            const poiName = poiNameInput.value;
+            const poiLat = parseFloat(poiLatInput.value);
+            const poiLon = parseFloat(poiLonInput.value);
+            if (isNaN(poiLat) || isNaN(poiLon) || !poiName) {
+                logMessage('Please enter a valid POI name, latitude, and longitude.', true);
+                showLoading(false);
+                return;
+            }
+            try {
+                const encryptedName = encryptData(poiName);
+                const poiData = {
+                    name: encryptedName,
+                    lat: poiLat,
+                    lon: poiLon,
+                    category: poiCategoryInput.value || 'other',
+                    geohash: encodeGeohash(poiLat, poiLon, 7),
+                    timestamp: serverTimestamp()
+                };
+                const poisCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'pois');
+                await addDoc(poisCollectionRef, poiData);
+                // Audit log
+                await addDoc(collection(db, 'artifacts', appId, 'auditLogs'), { action: 'create_poi', userId, data: poiData, at: serverTimestamp() });
+                logMessage(`POI "${poiName}" uploaded successfully.`);
+                poiNameInput.value = '';
+                poiLatInput.value = '';
+                poiLonInput.value = '';
+                poiCategoryInput.value = '';
+                await loadPoiTable();
+            } catch (error) {
+                console.error('Upload error:', error);
+                logMessage(`Upload failed: ${error.message}`, true);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        searchBtn.addEventListener('click', async () => {
+            showLoading(true);
+            const userLat = parseFloat(userLatInput.value);
+            const userLon = parseFloat(userLonInput.value);
+            const searchRadius = parseFloat(searchRadiusInput.value);
+            const searchCategory = searchCategoryInput.value;
+            if (isNaN(userLat) || isNaN(userLon) || isNaN(searchRadius)) {
+                logMessage('Please enter your location and a valid search radius.', true);
+                showLoading(false);
+                return;
+            }
+            resultsList.innerHTML = '';
+            noResultsText.classList.add('hidden');
+            visualizeResultsBtn.classList.add('hidden');
+            try {
+                logMessage('Searching for POIs...');
+                let foundPois = [];
+                try {
+                    const callable = httpsCallable(functions, 'queryNearby');
+                    const resp = await callable({ appId, lat: userLat, lon: userLon, radiusKm: searchRadius, category: searchCategory || null });
+                    foundPois = resp.data.results || [];
+                } catch (cloudErr) {
+                    // Fallback to client-side filtering
+                    const poisCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'pois');
+                    const prefixes = geohashPrefixesForRadiusKm(userLat, userLon, searchRadius);
+                    const poiQuery = await getDocs(poisCollectionRef);
+                    for (const docSnapshot of poiQuery.docs) {
+                        const poi = docSnapshot.data();
+                        if (poi.geohash) {
+                            const match = prefixes.some(p => poi.geohash.startsWith(p));
+                            if (!match) continue;
+                        }
+                        const distance = calculateDistance(userLat, userLon, poi.lat, poi.lon);
+                        if (distance <= searchRadius && (!searchCategory || poi.category === searchCategory)) {
+                            const decryptedName = decryptData(poi.name);
+                            const feedbackQuery = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'pois', docSnapshot.id, 'feedback'));
+                            let totalRating = 0, count = 0;
+                            feedbackQuery.forEach(fb => {
+                                if (fb.data().rating) {
+                                    totalRating += fb.data().rating;
+                                    count++;
+                                }
+                            });
+                            const avgRating = count > 0 ? (totalRating / count).toFixed(1) : 'No ratings';
+                            foundPois.push({ id: docSnapshot.id, name: decryptedName, lat: poi.lat, lon: poi.lon, category: poi.category, avgRating });
+                        }
+                    }
+                }
+                lastFoundPois = foundPois;
+                if (foundPois.length > 0) {
+                    foundPois.forEach(poi => {
+                        const li = document.createElement('li');
+                        li.className = 'p-3 bg-white border border-gray-200 rounded-lg shadow-sm font-medium text-gray-700 hover:bg-indigo-50 transition-colors text-sm sm:text-base';
+                        li.innerHTML = `
+                            ${poi.name} (Lat: ${poi.lat.toFixed(2)}, Lon: ${poi.lon.toFixed(2)}) - Category: ${poi.category} - Avg Rating: ${poi.avgRating}
+                            <div class="mt-2">
+                                <select class="rating-select p-1 border rounded text-sm" data-poi-id="${poi.id}">
+                                    <option value="">Rate</option>
+                                    <option value="1">1 Star</option>
+                                    <option value="2">2 Stars</option>
+                                    <option value="3">3 Stars</option>
+                                    <option value="4">4 Stars</option>
+                                    <option value="5">5 Stars</option>
+                                </select>
+                                <input type="text" class="feedback-input p-1 border rounded ml-2 text-sm" placeholder="Leave feedback" data-poi-id="${poi.id}">
+                                <button class="submit-feedback bg-indigo-500 text-white p-1 rounded ml-2 hover:bg-indigo-600 text-sm" data-poi-id="${poi.id}">Submit</button>
+                                <button class="toggle-favorite bg-amber-500 text-white p-1 rounded ml-2 hover:bg-amber-600 text-sm" data-poi-id="${poi.id}" data-poi-name="${poi.name}" data-poi-lat="${poi.lat}" data-poi-lon="${poi.lon}" data-poi-category="${poi.category}">★ Favorite</button>
+                            </div>
+                        `;
+                        resultsList.appendChild(li);
+                    });
+                    visualizeResultsBtn.classList.remove('hidden');
+                    if (radiusCircle) { map.removeLayer(radiusCircle); }
+                    radiusCircle = L.circle([userLat, userLon], { radius: searchRadius * 1000, color: '#4f46e5', fillColor: '#818cf8', fillOpacity: 0.15 });
+                    radiusCircle.addTo(map);
+                    // Cache search state and results for restore and sharing
+                    localStorage.setItem('eplq_last_search', JSON.stringify({ userLat, userLon, searchRadius, searchCategory }));
+                    localStorage.setItem('eplq_last_results', JSON.stringify(foundPois));
+                    logMessage(`Search complete. Found ${foundPois.length} POI(s).`);
+                } else {
+                    noResultsText.classList.remove('hidden');
+                    logMessage('No POIs found within the specified radius.');
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                logMessage(`Search failed: ${error.message}`, true);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        resultsList.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('submit-feedback')) {
+                const poiId = e.target.dataset.poiId;
+                const ratingSelect = document.querySelector(`.rating-select[data-poi-id="${poiId}"]`);
+                const feedbackInput = document.querySelector(`.feedback-input[data-poi-id="${poiId}"]`);
+                const rating = ratingSelect.value;
+                const feedback = feedbackInput.value;
+                if (!rating && !feedback) return;
+                try {
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'pois', poiId, 'feedback'), {
+                        userId,
+                        rating: rating ? parseInt(rating) : null,
+                        feedback: feedback || null,
+                        timestamp: serverTimestamp()
+                    });
+                    await addDoc(collection(db, 'artifacts', appId, 'auditLogs'), { action: 'feedback', userId, poiId, rating: rating ? parseInt(rating) : null, at: serverTimestamp() });
+                    logMessage('Feedback submitted successfully.');
+                    feedbackInput.value = '';
+                    ratingSelect.value = '';
+                } catch (error) {
+                    console.error('Feedback error:', error);
+                    logMessage(`Feedback submission failed: ${error.message}`, true);
+                }
+            }
+        });
+
+        visualizeAllBtn.addEventListener('click', async () => {
+            showLoading(true);
+            logMessage('Visualizing all POIs...');
+            try {
+                const poisCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'pois');
+                const poiQuery = await getDocs(poisCollectionRef);
+                const pois = [];
+                poiQuery.forEach(doc => {
+                    const poi = doc.data();
+                    const decryptedName = decryptData(poi.name);
+                    pois.push({
+                        name: decryptedName,
+                        lat: poi.lat,
+                        lon: poi.lon
+                    });
+                });
+                highlightPOIsOnMap(pois);
+                highlightPOIs(pois);
+                logMessage(`Visualized ${pois.length} POI(s) on the map.`);
+            } catch (error) {
+                console.error('Visualize error:', error);
+                logMessage(`Visualization failed: ${error.message}`, true);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        visualizeResultsBtn.addEventListener('click', () => {
+            showLoading(true);
+            logMessage('Visualizing search results...');
+            try {
+                highlightPOIsOnMap(lastFoundPois);
+                highlightPOIs(lastFoundPois);
+                logMessage(`Visualized ${lastFoundPois.length} search result POI(s) on the map.`);
+            } catch (error) {
+                console.error('Visualize error:', error);
+                logMessage(`Visualization failed: ${error.message}`, true);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        detectLocationBtn.addEventListener('click', () => {
+            showLoading(true);
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        userLatInput.value = latitude.toFixed(6);
+                        userLonInput.value = longitude.toFixed(6);
+                        if (map && userMarker) map.removeLayer(userMarker);
+                        userMarker = L.marker([latitude, longitude]).addTo(map).bindPopup('Your Location').openPopup();
+                        map.setView([latitude, longitude], 13);
+                        logMessage('Location detected successfully.');
+                        showLoading(false);
+                    },
+                    (error) => {
+                        console.error('Geolocation error:', error);
+                        logMessage(`Location detection failed: ${error.message}`, true);
+                        showLoading(false);
+                    }
+                );
+            } else {
+                logMessage('Geolocation is not supported by your browser.', true);
+                showLoading(false);
+            }
+        });
+
+        const loadPoiTable = async () => {
+            poiTableBody.innerHTML = '';
+            try {
+                const poisCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'pois');
+                const poiQuery = await getDocs(poisCollectionRef);
+                for (const docSnapshot of poiQuery.docs) {
+                    const poi = docSnapshot.data();
+                    const decryptedName = decryptData(poi.name);
+                    const feedbackQuery = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'pois', docSnapshot.id, 'feedback'));
+                    let totalRating = 0, count = 0;
+                    feedbackQuery.forEach(fb => {
+                        if (fb.data().rating) {
+                            totalRating += fb.data().rating;
+                            count++;
+                        }
+                    });
+                    const avgRating = count > 0 ? (totalRating / count).toFixed(1) : 'No ratings';
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-indigo-50 transition-colors';
+                    row.innerHTML = `
+                        <td class="p-3 text-sm sm:text-base">${decryptedName}</td>
+                        <td class="p-3 text-sm sm:text-base">${poi.lat.toFixed(2)}</td>
+                        <td class="p-3 text-sm sm:text-base">${poi.lon.toFixed(2)}</td>
+                        <td class="p-3 text-sm sm:text-base">${poi.category || 'other'}</td>
+                        <td class="p-3 text-sm sm:text-base">${avgRating}</td>
+                        <td class="p-3">
+                            <button class="edit-poi bg-yellow-500 text-white p-1 rounded hover:bg-yellow-600 text-sm" data-poi-id="${docSnapshot.id}" data-tooltip="Edit POI">Edit</button>
+                            <button class="delete-poi bg-red-500 text-white p-1 rounded ml-2 hover:bg-red-600 text-sm" data-poi-id="${docSnapshot.id}" data-tooltip="Delete POI">Delete</button>
+                        </td>
+                    `;
+                    poiTableBody.appendChild(row);
+                }
+            } catch (error) {
+                console.error('Load POI table error:', error);
+                logMessage(`Failed to load POIs: ${error.message}`, true);
+            }
+        };
+
+        poiTableBody.addEventListener('click', async (e) => {
+            const poiId = e.target.dataset.poiId;
+            if (e.target.classList.contains('delete-poi')) {
+                try {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'pois', poiId));
+                    await addDoc(collection(db, 'artifacts', appId, 'auditLogs'), { action: 'delete_poi', userId, poiId, at: serverTimestamp() });
+                    logMessage('POI deleted successfully.');
+                    await loadPoiTable();
+                } catch (error) {
+                    console.error('Delete POI error:', error);
+                    logMessage(`Delete failed: ${error.message}`, true);
+                }
+            } else if (e.target.classList.contains('edit-poi')) {
+                editingPoiId = poiId;
+                editPoiName.value = e.target.dataset.poiName || '';
+                editPoiLat.value = e.target.dataset.poiLat || '';
+                editPoiLon.value = e.target.dataset.poiLon || '';
+                editPoiCategory.value = e.target.dataset.poiCategory || 'other';
+                editModal.classList.remove('hidden');
+                editModal.classList.add('flex');
+            }
+        });
+
+        cancelEditBtn.addEventListener('click', () => {
+            editingPoiId = null;
+            editModal.classList.add('hidden');
+            editModal.classList.remove('flex');
+        });
+
+        saveEditBtn.addEventListener('click', async () => {
+            if (!editingPoiId) return;
+            try {
+                const updated = {
+                    name: encryptData(editPoiName.value.trim()),
+                    lat: parseFloat(editPoiLat.value),
+                    lon: parseFloat(editPoiLon.value),
+                    category: editPoiCategory.value || 'other',
+                    geohash: encodeGeohash(parseFloat(editPoiLat.value), parseFloat(editPoiLon.value), 7)
+                };
+                if (isNaN(updated.lat) || isNaN(updated.lon)) {
+                    logMessage('Please provide valid numbers for latitude and longitude.', true);
+                    return;
+                }
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'pois', editingPoiId), updated);
+                await addDoc(collection(db, 'artifacts', appId, 'auditLogs'), { action: 'update_poi', userId, poiId: editingPoiId, at: serverTimestamp() });
+                logMessage('POI updated successfully.');
+                editingPoiId = null;
+                editModal.classList.add('hidden');
+                editModal.classList.remove('flex');
+                await loadPoiTable();
+            } catch (error) {
+                console.error('Update POI error:', error);
+                logMessage(`Update failed: ${error.message}`, true);
+            }
+        });
+
+        const setupMap = () => {
+            map = L.map('map').setView([0, 0], 2);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+            clusterGroup = L.markerClusterGroup();
+            map.addLayer(clusterGroup);
+            map.on('click', (e) => {
+                const { lat, lng } = e.latlng;
+                userLatInput.value = lat.toFixed(6);
+                userLonInput.value = lng.toFixed(6);
+                if (userMarker) map.removeLayer(userMarker);
+                userMarker = L.marker([lat, lng]).addTo(map).bindPopup('Your Location').openPopup();
+                logMessage(`Location set to Lat: ${lat.toFixed(2)}, Lon: ${lng.toFixed(2)}`);
+            });
+        };
+
+        const highlightPOIsOnMap = (pois) => {
+            if (!clusterGroup) return;
+            clusterGroup.clearLayers();
+            const markers = [];
+            pois.forEach(poi => {
+                const marker = L.marker([poi.lat, poi.lon], { title: poi.name });
+                marker.bindPopup(`<b>${poi.name}</b><br>Lat: ${poi.lat.toFixed(2)}, Lon: ${poi.lon.toFixed(2)}`);
+                marker.on('click', () => logMessage(`Clicked POI: ${poi.name}`));
+                markers.push(marker);
+            });
+            if (markers.length) {
+                clusterGroup.addLayers(markers);
+                const bounds = L.latLngBounds(pois.map(p => [p.lat, p.lon]));
+                map.fitBounds(bounds);
+            }
+        };
+
+        const setupThreeJs = () => {
+            const canvas = document.getElementById('bg-canvas');
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000000, 0);
+
+            const numPoints = 200;
+            const positions = new Float32Array(numPoints * 3);
+            const colors = new Float32Array(numPoints * 3);
+            const geometry = new THREE.BufferGeometry();
+
+            for (let i = 0; i < numPoints; i++) {
+                const x = (Math.random() - 0.5) * 20;
+                const y = (Math.random() - 0.5) * 20;
+                const z = (Math.random() - 0.5) * 20;
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+                colors[i * 3] = 0.3;
+                colors[i * 3 + 1] = 0.3;
+                colors[i * 3 + 2] = 0.6;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const pointsMaterial = new THREE.PointsMaterial({
+                size: 0.1,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            points = new THREE.Points(geometry, pointsMaterial);
+            scene.add(points);
+
+            const lineMaterial = new THREE.LineBasicMaterial({
+                color: 0x4f46e5,
+                linewidth: 1,
+                transparent: true,
+                opacity: 0.2
+            });
+            const lineGeometry = new THREE.BufferGeometry();
+            const linePositions = [];
+            for (let i = 0; i < numPoints; i++) {
+                for (let j = i + 1; j < numPoints; j++) {
+                    const dist = Math.sqrt(
+                        Math.pow(positions[i * 3] - positions[j * 3], 2) +
+                        Math.pow(positions[i * 3 + 1] - positions[j * 3 + 1], 2) +
+                        Math.pow(positions[i * 3 + 2] - positions[j * 3 + 2], 2)
+                    );
+                    if (dist < 3) {
+                        linePositions.push(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+                        linePositions.push(positions[j * 3], positions[j * 3 + 1], positions[j * 3 + 2]);
+                    }
+                }
+            }
+            lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+            lines = new THREE.LineSegments(lineGeometry, lineMaterial);
+            scene.add(lines);
+
+            camera.position.z = 5;
+
+            document.addEventListener('mousemove', onDocumentMouseMove, false);
+            function onDocumentMouseMove(event) {
+                mouseX = (event.clientX - windowHalfX) * 0.001;
+                mouseY = (event.clientY - windowHalfY) * 0.001;
+            }
+
+            const animate = () => {
+                requestAnimationFrame(animate);
+                if (!animationPaused) {
+                    camera.position.x += (mouseX - camera.position.x) * 0.05;
+                    camera.position.y += (-mouseY - camera.position.y) * 0.05;
+                    camera.lookAt(scene.position);
+                    points.rotation.y += 0.001;
+                    lines.rotation.y += 0.001;
+                }
+                renderer.render(scene, camera);
+            };
+
+            window.addEventListener('resize', () => {
+                windowHalfX = window.innerWidth / 2;
+                windowHalfY = window.innerHeight / 2;
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            animate();
+        };
+
+        // Background controls
+        bgPauseBtn?.addEventListener('click', () => {
+            animationPaused = !animationPaused;
+            bgPauseBtn.textContent = animationPaused ? 'Resume BG' : 'Pause BG';
+        });
+
+        bgPreset?.addEventListener('change', (e) => {
+            const val = e.target.value;
+            if (!scene) return;
+            // Reset current points/lines
+            if (points) scene.remove(points);
+            if (lines) scene.remove(lines);
+            const numPoints = val === 'starfield' ? 400 : 200;
+            const positions = new Float32Array(numPoints * 3);
+            const colors = new Float32Array(numPoints * 3);
+            const geometry = new THREE.BufferGeometry();
+            for (let i = 0; i < numPoints; i++) {
+                let x, y, z;
+                if (val === 'orbit') {
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = 10 + Math.random() * 5;
+                    x = Math.cos(angle) * radius;
+                    y = (Math.random() - 0.5) * 2;
+                    z = Math.sin(angle) * radius;
+                } else {
+                    x = (Math.random() - 0.5) * 20;
+                    y = (Math.random() - 0.5) * 20;
+                    z = (Math.random() - 0.5) * 20;
+                }
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+                const c = val === 'starfield' ? 1.0 : 0.3;
+                colors[i * 3] = c;
+                colors[i * 3 + 1] = c;
+                colors[i * 3 + 2] = val === 'network' ? 0.6 : c;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            const pointsMaterial = new THREE.PointsMaterial({ size: 0.1, vertexColors: true, transparent: true, opacity: 0.8 });
+            points = new THREE.Points(geometry, pointsMaterial);
+            scene.add(points);
+            if (val === 'network') {
+                const lineMaterial = new THREE.LineBasicMaterial({ color: 0x4f46e5, linewidth: 1, transparent: true, opacity: 0.2 });
+                const lineGeometry = new THREE.BufferGeometry();
+                const linePositions = [];
+                for (let i = 0; i < numPoints; i++) {
+                    for (let j = i + 1; j < numPoints; j++) {
+                        const dx = positions[i * 3] - positions[j * 3];
+                        const dy = positions[i * 3 + 1] - positions[j * 3 + 1];
+                        const dz = positions[i * 3 + 2] - positions[j * 3 + 2];
+                        const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                        if (dist < 3) {
+                            linePositions.push(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+                            linePositions.push(positions[j * 3], positions[j * 3 + 1], positions[j * 3 + 2]);
+                        }
+                    }
+                }
+                lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+                lines = new THREE.LineSegments(lineGeometry, lineMaterial);
+                scene.add(lines);
+            }
+        });
+
+        const highlightPOIs = (pois) => {
+            if (!scene) return;
+            scene.children.filter(obj => obj.name === 'poiMarker').forEach(marker => {
+                scene.remove(marker);
+            });
+
+            pois.forEach(poi => {
+                const geometry = new THREE.SphereGeometry(0.2, 32, 32);
+                const material = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.9 });
+                const marker = new THREE.Mesh(geometry, material);
+                const radius = 5;
+                const latRad = poi.lat * Math.PI / 180;
+                const lonRad = poi.lon * Math.PI / 180;
+                marker.position.x = Math.cos(latRad) * Math.sin(lonRad) * radius;
+                marker.position.y = Math.sin(latRad) * radius;
+                marker.position.z = Math.cos(latRad) * Math.cos(lonRad) * radius;
+                marker.name = 'poiMarker';
+                marker.userData = { name: poi.name, lat: poi.lat, lon: poi.lon };
+                scene.add(marker);
+
+                const animateMarker = () => {
+                    requestAnimationFrame(animateMarker);
+                    marker.scale.x = 1 + Math.sin(Date.now() * 0.005) * 0.1;
+                    marker.scale.y = marker.scale.x;
+                    marker.scale.z = marker.scale.x;
+                    marker.material.opacity = 0.7 + Math.sin(Date.now() * 0.005) * 0.3;
+                };
+                animateMarker();
+            });
+        };
+
+        // Favorites: toggle and list
+        resultsList.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('toggle-favorite')) {
+                if (!userId) {
+                    logMessage('Please sign in to save favorites.', true);
+                    return;
+                }
+                try {
+                    const poiId = e.target.dataset.poiId;
+                    const favDocRef = doc(db, 'artifacts', appId, 'users', userId, 'favorites', poiId);
+                    await setDoc(favDocRef, {
+                        name: e.target.dataset.poiName,
+                        lat: parseFloat(e.target.dataset.poiLat),
+                        lon: parseFloat(e.target.dataset.poiLon),
+                        category: e.target.dataset.poiCategory || 'other',
+                        timestamp: new Date()
+                    });
+                    logMessage('Added to favorites.');
+                } catch (error) {
+                    console.error('Favorite error:', error);
+                    logMessage(`Failed to add favorite: ${error.message}`, true);
+                }
+            }
+        });
+
+        const loadFavorites = async () => {
+            favoritesList.innerHTML = '';
+            noFavoritesText.classList.add('hidden');
+            try {
+                const favsRef = collection(db, 'artifacts', appId, 'users', userId, 'favorites');
+                const favs = await getDocs(favsRef);
+                const favPois = [];
+                favs.forEach(d => {
+                    const f = d.data();
+                    const li = document.createElement('li');
+                    li.className = 'p-3 bg-white border border-gray-200 rounded-lg shadow-sm font-medium text-gray-700 hover:bg-amber-50 transition-colors text-sm sm:text-base flex justify-between items-center';
+                    li.innerHTML = `<span>${f.name} (Lat: ${f.lat.toFixed(2)}, Lon: ${f.lon.toFixed(2)}) - ${f.category}</span>
+                                    <button class="remove-fav bg-red-500 text-white text-xs px-2 py-1 rounded" data-id="${d.id}">Remove</button>`;
+                    favoritesList.appendChild(li);
+                    favPois.push({ name: f.name, lat: f.lat, lon: f.lon });
+                });
+                if (favPois.length === 0) {
+                    noFavoritesText.classList.remove('hidden');
+                } else {
+                    highlightPOIsOnMap(favPois);
+                }
+            } catch (error) {
+                console.error('Load favorites error:', error);
+                logMessage(`Failed to load favorites: ${error.message}`, true);
+            }
+        };
+
+        showFavoritesBtn.addEventListener('click', async () => {
+            if (!userId) {
+                logMessage('Please sign in to view favorites.', true);
+                return;
+            }
+            await loadFavorites();
+        });
+
+        favoritesList.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('remove-fav')) {
+                const favId = e.target.dataset.id;
+                try {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'users', userId, 'favorites', favId));
+                    logMessage('Removed from favorites.');
+                    await loadFavorites();
+                } catch (error) {
+                    console.error('Remove favorite error:', error);
+                    logMessage(`Failed to remove favorite: ${error.message}`, true);
+                }
+            }
+        });
+
+        // Toggle heatmap layer using lastFoundPois
+        toggleHeatmapBtn.addEventListener('click', () => {
+            if (!map) return;
+            heatmapEnabled = !heatmapEnabled;
+            if (heatmapEnabled) {
+                const pts = lastFoundPois.map(p => [p.lat, p.lon, 0.5]);
+                heatLayer = L.heatLayer(pts, { radius: 25, blur: 15, maxZoom: 17 }).addTo(map);
+                logMessage('Heatmap enabled.');
+            } else if (heatLayer) {
+                map.removeLayer(heatLayer);
+                heatLayer = null;
+                logMessage('Heatmap disabled.');
+            }
+        });
+
+        // Shareable link: encode search params in URL
+        shareLinkBtn.addEventListener('click', () => {
+            const userLat = userLatInput.value;
+            const userLon = userLonInput.value;
+            const searchRadius = searchRadiusInput.value;
+            const searchCategory = searchCategoryInput.value;
+            const params = new URLSearchParams({
+                lat: userLat,
+                lon: userLon,
+                r: searchRadius,
+                c: searchCategory
+            });
+            const url = `${location.origin}${location.pathname}?${params.toString()}`;
+            navigator.clipboard.writeText(url).then(() => logMessage('Shareable link copied to clipboard.'));
+        });
+
+        // CSV export (search results)
+        const toCsv = (rows) => {
+            const header = ['name','lat','lon','category','avgRating'];
+            const lines = [header.join(',')];
+            rows.forEach(r => {
+                lines.push([r.name, r.lat, r.lon, r.category || '', r.avgRating || ''].join(','));
+            });
+            return lines.join('\n');
+        };
+
+        exportCsvBtn.addEventListener('click', () => {
+            if (!lastFoundPois || lastFoundPois.length === 0) {
+                logMessage('No results to export.', true);
+                return;
+            }
+            const csv = toCsv(lastFoundPois);
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'eplq_results.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        // Admin CSV import
+        importCsvBtn.addEventListener('click', async () => {
+            if (!poiCsvInput.files || poiCsvInput.files.length === 0) {
+                logMessage('Select a CSV file first.', true);
+                return;
+            }
+            try {
+                const file = poiCsvInput.files[0];
+                const text = await file.text();
+                const lines = text.split(/\r?\n/).filter(Boolean);
+                const dataLines = lines[0].toLowerCase().includes('name') ? lines.slice(1) : lines;
+                const poisCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'pois');
+                let imported = 0;
+                for (const line of dataLines) {
+                    const [name, lat, lon, category] = line.split(',');
+                    if (!name || !lat || !lon) continue;
+                    await addDoc(poisCollectionRef, {
+                        name: encryptData(name.trim()),
+                        lat: parseFloat(lat),
+                        lon: parseFloat(lon),
+                        category: (category || 'other').trim(),
+                        timestamp: serverTimestamp()
+                    });
+                    await addDoc(collection(db, 'artifacts', appId, 'auditLogs'), { action: 'import_poi', userId, name: name.trim(), at: serverTimestamp() });
+                    imported++;
+                }
+                logMessage(`Imported ${imported} row(s) from CSV.`);
+                await loadPoiTable();
+            } catch (error) {
+                console.error('CSV import error:', error);
+                logMessage(`CSV import failed: ${error.message}`, true);
+            }
+        });
+
+        // Dark mode
+        const applyDarkMode = (enabled) => {
+            document.documentElement.classList.toggle('dark', enabled);
+            document.body.classList.toggle('bg-slate-900', enabled);
+            document.body.classList.toggle('text-gray-100', enabled);
+        };
+        const savedTheme = localStorage.getItem('eplq_theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.classList.add('dark');
+            applyDarkMode(true);
+        }
+        darkModeToggle.addEventListener('click', () => {
+            const isDark = document.documentElement.classList.toggle('dark');
+            applyDarkMode(isDark);
+            localStorage.setItem('eplq_theme', isDark ? 'dark' : 'light');
+        });
+
+        // Service worker registration (PWA/offline)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(() => {
+                    console.log('Service Worker registered');
+                }).catch(err => console.warn('SW registration failed', err));
+            });
+        }
+
+        // A2HS (Add to Home Screen) prompt handling
+        let deferredPrompt;
+        const installBtn = document.getElementById('installAppBtn');
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            installBtn.classList.remove('hidden');
+        });
+        installBtn?.addEventListener('click', async () => {
+            if (!deferredPrompt) return;
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            if (outcome === 'accepted') {
+                installBtn.classList.add('hidden');
+            }
+            deferredPrompt = null;
+        });
+
+        window.onload = () => {
+            initializeFirebase();
+            setupMap();
+            setupThreeJs();
+            // Restore from URL if present
+            const urlParams = new URLSearchParams(window.location.search);
+            const lat = urlParams.get('lat');
+            const lon = urlParams.get('lon');
+            const r = urlParams.get('r');
+            const c = urlParams.get('c') || '';
+            if (lat && lon && r) {
+                userLatInput.value = lat;
+                userLonInput.value = lon;
+                searchRadiusInput.value = r;
+                searchCategoryInput.value = c;
+            } else {
+                // Restore last search state
+                const last = localStorage.getItem('eplq_last_search');
+                if (last) {
+                    const { userLat, userLon, searchRadius, searchCategory } = JSON.parse(last);
+                    if (userLat && userLon && searchRadius !== undefined) {
+                        userLatInput.value = userLat;
+                        userLonInput.value = userLon;
+                        searchRadiusInput.value = searchRadius;
+                        searchCategoryInput.value = searchCategory || '';
+                    }
+                }
+                const cached = localStorage.getItem('eplq_last_results');
+                if (cached) {
+                    try {
+                        lastFoundPois = JSON.parse(cached);
+                        if (Array.isArray(lastFoundPois) && lastFoundPois.length) {
+                            highlightPOIsOnMap(lastFoundPois);
+                        }
+                    } catch {}
+                }
+            }
+        };
+    </script>
+</body>
+</html>
