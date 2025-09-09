@@ -669,7 +669,15 @@
                 try {
                     const callable = httpsCallable(functions, 'queryNearby');
                     const resp = await callable({ appId, lat: userLat, lon: userLon, radiusKm: searchRadius, category: searchCategory || null });
-                    foundPois = resp.data.results || [];
+                    const rawResults = resp.data.results || [];
+                    foundPois = rawResults.map((p) => ({
+                        id: p.id,
+                        name: decryptData(p.name || ''),
+                        lat: p.lat,
+                        lon: p.lon,
+                        category: p.category || 'other',
+                        avgRating: p.avgRating || 'N/A'
+                    }));
                 } catch (cloudErr) {
                     // Fallback to client-side filtering
                     const poisCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'pois');
@@ -1196,6 +1204,10 @@
                     noFavoritesText.classList.remove('hidden');
                 } else {
                     highlightPOIsOnMap(favPois);
+                    try {
+                        const bounds = L.latLngBounds(favPois.map(p => [p.lat, p.lon]));
+                        map.fitBounds(bounds);
+                    } catch {}
                 }
             } catch (error) {
                 console.error('Load favorites error:', error);
@@ -1228,9 +1240,19 @@
         // Toggle heatmap layer using lastFoundPois
         toggleHeatmapBtn.addEventListener('click', () => {
             if (!map) return;
+            if (!lastFoundPois || lastFoundPois.length === 0) {
+                logMessage('Run a search first to generate heatmap.', true);
+                return;
+            }
             heatmapEnabled = !heatmapEnabled;
             if (heatmapEnabled) {
+                if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
                 const pts = lastFoundPois.map(p => [p.lat, p.lon, 0.5]);
+                if (!L.heatLayer) {
+                    logMessage('Heatmap plugin not loaded.', true);
+                    heatmapEnabled = false;
+                    return;
+                }
                 heatLayer = L.heatLayer(pts, { radius: 25, blur: 15, maxZoom: 17 }).addTo(map);
                 logMessage('Heatmap enabled.');
             } else if (heatLayer) {
@@ -1246,6 +1268,10 @@
             const userLon = userLonInput.value;
             const searchRadius = searchRadiusInput.value;
             const searchCategory = searchCategoryInput.value;
+            if (!userLat || !userLon || !searchRadius) {
+                logMessage('Enter latitude, longitude, and radius before sharing.', true);
+                return;
+            }
             const params = new URLSearchParams({
                 lat: userLat,
                 lon: userLon,
@@ -1253,15 +1279,33 @@
                 c: searchCategory
             });
             const url = `${location.origin}${location.pathname}?${params.toString()}`;
-            navigator.clipboard.writeText(url).then(() => logMessage('Shareable link copied to clipboard.'));
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url)
+                    .then(() => logMessage('Shareable link copied to clipboard.'))
+                    .catch(() => {
+                        window.prompt('Copy this link:', url);
+                    });
+            } else {
+                window.prompt('Copy this link:', url);
+            }
         });
 
         // CSV export (search results)
         const toCsv = (rows) => {
             const header = ['name','lat','lon','category','avgRating'];
+            const escape = (value) => {
+                const s = String(value ?? '');
+                return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+            };
             const lines = [header.join(',')];
             rows.forEach(r => {
-                lines.push([r.name, r.lat, r.lon, r.category || '', r.avgRating || ''].join(','));
+                lines.push([
+                    escape(r.name),
+                    escape(r.lat),
+                    escape(r.lon),
+                    escape(r.category || ''),
+                    escape(r.avgRating || '')
+                ].join(','));
             });
             return lines.join('\n');
         };
